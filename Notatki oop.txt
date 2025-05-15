@@ -1,0 +1,46 @@
+Żeby wyjątek rzucic: 
+Klasa: public class NegativeLifespanException extends Exception {
+
+    public NegativeLifespanException(Person person) {
+        super(person.getImie()+" "+person.getNazwisko()+  " Data smierci jest wczesniejsza niz data urodzin");
+    }
+}
+
+potem w innej robimy metode sprawdzjaca czy wytepuje wyjątek:
+
+ public void validateLifespan() throws NegativeLifespanException {
+        if (this.dataSmierci!=null && this.dataSmierci.isBefore(this.dataUrodzin)) {
+            throw new NegativeLifespanException(this);
+        }
+    }
+
+
+i potem w try catchu używamy tej metody
+
+
+
+Żeby zapisac cos do pliku binarnego używamy :
+  public static void toBinaryFile(List<Person> people, String filename) throws IOException {
+
+        FileOutputStream fos = new FileOutputStream(filename); 
+// Tworzy strumień bajtowy do pliku. Otwiera plik (lub tworzy nowy), który będzie zapisem binarnym.
+
+        ObjectOutputStream oos = new ObjectOutputStream(fos);
+//Opakowuje FileOutputStream w ObjectOutputStream, który potrafi zapisywać całe obiekty (a nie tylko surowe bajty jak FileOutputStream).
+
+        oos.writeObject(people);
+
+    }
+
+
+  public static List<Person> fromBinaryFile(String path) throws IOException, ClassNotFoundException {
+    FileInputStream fi =new FileInputStream(path);
+ObjectInputStream oi = new ObjectInputStream(fi);
+return (List<Person>) oi.readObject();
+    }
+
+Procesbuilder do wywoływania z cmd 
+
+Lambda wyrażenie: 
+(parametry) -> { ciało }
+
