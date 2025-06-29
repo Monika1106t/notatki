@@ -44,3 +44,806 @@ Procesbuilder do wywoływania z cmd
 Lambda wyrażenie: 
 (parametry) -> { ciało }
 
+
+---------------------------------------Database-------------------------------
+
+
+public class DatabaseConnection {
+    private Connection connection;
+
+    public void connect(String path){
+        try {
+            connection = DriverManager.getConnection("jdbc:sqlite:"+path);
+            System.out.println("Connected");
+        } catch (SQLException throwables) {
+            throwables.printStackTrace();
+        }
+    }
+    public void disconnect(){
+        try {
+            connection.close();
+            System.out.println("Disconnected");
+        } catch (SQLException throwables) {
+            throwables.printStackTrace();
+        }
+    }
+
+    public Connection getConnection() {
+        return connection;
+    }
+}
+
+
+
+
+
+
+
+public class AccountManager {
+    DatabaseConnection connection;
+    public AccountManager(DatabaseConnection connection) {
+        this.connection = connection;
+    }
+
+    public int register(String name, String password) throws SQLException {
+        PreparedStatement statement = connection.getConnection()
+                .prepareStatement("SELECT * FROM auth_account WHERE name = ?;");
+        statement.setString(1, name);
+
+        statement.execute();
+        if(statement.getResultSet().next())
+            throw new RuntimeException("User " + name + " already exists.");
+
+        statement = connection.getConnection().prepareStatement("INSERT INTO auth_account(name, password) VALUES (?, ?);");
+        statement.setString(1, name);
+        statement.setString(2, BCrypt.withDefaults().hashToString(12, password.toCharArray()));
+        statement.executeUpdate();
+
+        ResultSet resultSet = statement.getGeneratedKeys();
+        resultSet.next();
+        return resultSet.getInt(1);
+    }
+
+    public boolean authenticate(String name, String password) throws SQLException {
+        PreparedStatement statement = connection.getConnection()
+                .prepareStatement("SELECT password FROM auth_account WHERE name = ?;");
+
+        statement.setString(1, name);
+        statement.execute();
+
+        ResultSet result = statement.getResultSet();
+        if (result.next()) {
+            String hashedPassword = result.getString("password");
+            BCrypt.Result cryptResult = BCrypt.verifyer().verify(password.toCharArray(), hashedPassword);
+            return cryptResult.verified;
+        }
+        else
+            throw new RuntimeException("No such user " + name);
+    }
+
+    public Account getAccount(String name) throws SQLException {
+        PreparedStatement statement = connection.getConnection()
+                .prepareStatement("SELECT id, name FROM auth_account WHERE name = ?;");
+        statement.setString(1, name);
+        statement.execute();
+
+        ResultSet result = statement.getResultSet();
+        if(result.next()) {
+            int id = result.getInt("id");
+            return new Account(id, name);
+        }
+        throw new RuntimeException("No such user "+name);
+    }
+}
+
+
+---------------------------------------------Testy -------------------------------
+
+
+
+
+public class PlaylistTest {
+    @Test
+    void isEmpty() {
+        Playlist playlist = new Playlist();
+        assertTrue(playlist.isEmpty());
+    }
+
+    @Test
+    void hasSingle() {
+        Playlist playlist = new Playlist();
+        playlist.add(new Song("Czesław Niemen", "Wspomnienie", 220));
+        assertEquals(1, playlist.size());
+    }
+
+    @Test
+    void hasExact() {
+        Playlist playlist = new Playlist();
+        Song inputSong = new Song("Czesław Niemen", "Wspomnienie", 220);
+        Song validationSong = new Song("Czesław Niemen", "Wspomnienie", 220);
+        playlist.add(inputSong);
+        assertEquals(validationSong, playlist.get(0));
+    }
+
+    @Test
+    void atSecond() {
+        Playlist playlist = new Playlist();
+        playlist.addAll(List.of(
+                new Song("Czesław Niemen", "Wspomnienie", 220),
+                new Song("Jerzy Połomski", "Jesienne róże", 205),
+                new Song("Marek Grechuta", "Korowód", 230)
+        ));
+        assertEquals(playlist.get(1), playlist.atSecond(300));
+    }
+
+    @Test
+    void timeExceeded() {
+        Playlist playlist = new Playlist();
+        playlist.addAll(List.of(
+                new Song("Czesław Niemen", "Wspomnienie", 220),
+                new Song("Jerzy Połomski", "Jesienne róże", 205),
+                new Song("Marek Grechuta", "Korowód", 230)
+        ));
+        assertThrows(IndexOutOfBoundsException.class, () -> playlist.atSecond(1000));
+    }
+
+    String outOfBoundsCommon(int time) {
+        Playlist playlist = new Playlist();
+        playlist.addAll(List.of(
+                new Song("Czesław Niemen", "Wspomnienie", 220),
+                new Song("Jerzy Połomski", "Jesienne róże", 205),
+                new Song("Marek Grechuta", "Korowód", 230)
+        ));
+        IndexOutOfBoundsException exception = assertThrows(IndexOutOfBoundsException.class, () -> playlist.atSecond(time));
+        return exception.getMessage();
+    }
+
+    @Test
+    void timeExceeded2() {
+        assertEquals("Playlist exceeded!", outOfBoundsCommon(1000));
+    }
+
+    @Test
+    void timeNegative() {
+        assertEquals("Negative time!", outOfBoundsCommon(-1000));
+    }
+}
+
+
+
+
+
+
+---------------------------------------------Image Handler -------------------------------
+
+public class ImageHandler {
+    private BufferedImage image;
+
+    // Metoda do wczytania obrazu z podanej ścieżki
+    public void loadImage(String path) {
+        try {
+            File file = new File(path);
+            image = ImageIO.read(file);
+            System.out.println("Obraz został wczytany pomyślnie.");
+        } catch (IOException e) {
+            System.out.println("Wystąpił błąd podczas wczytywania obrazu: " + e.getMessage());
+        }
+    }
+
+    // Metoda do zapisania obrazu z pola klasy do podanej ścieżki
+    public void saveImage(String path) {
+        try {
+            File file = new File(path);
+            String format = path.substring(path.lastIndexOf('.') + 1);
+            ImageIO.write(image, format, file);
+            System.out.println("Obraz został zapisany pomyślnie.");
+        } catch (IOException e) {
+            System.out.println("Wystąpił błąd podczas zapisywania obrazu: " + e.getMessage());
+        } catch (StringIndexOutOfBoundsException e) {
+            System.out.println("Niepoprawna ścieżka, brak rozszerzenia obrazu.");
+        }catch (IllegalArgumentException e) {
+            System.out.println("Brak wczytanego obrazu do zapisania.");
+        }
+    }
+
+    // Metoda do pobrania obiektu BufferedImage (jeśli potrzebne)
+    public BufferedImage getImage() {
+        return image;
+    }
+
+    // Metoda do zwiększenia jasności obrazu o podaną stałą
+    public void adjustBrightness(int value) {
+        if (image == null) {
+            System.out.println("Brak wczytanego obrazu.");
+            return;
+        }
+
+        // Iteracja po pikselach obrazu i zmiana jasności
+        for (int x = 0; x < image.getWidth(); x++) {
+            for (int y = 0; y < image.getHeight(); y++) {
+                int rgb = image.getRGB(x, y);
+                int alpha = (rgb >> 24) & 0xFF;
+                int red = (rgb >> 16) & 0xFF;
+                int green = (rgb >> 8) & 0xFF;
+                int blue = rgb & 0xFF;
+
+                // Zmiana jasności dla każdego kanału koloru
+                red = clamp(red + value);
+                green = clamp(green + value);
+                blue = clamp(blue + value);
+
+                int newRGB = (alpha << 24) | (red << 16) | (green << 8) | blue;
+                image.setRGB(x, y, newRGB);
+            }
+        }
+
+        //graphics.dispose();
+    }
+
+    // Metoda pomocnicza do ograniczenia wartości do zakresu 0-255
+    private int clamp(int value) {
+        return Math.min(Math.max(0, value), 255);
+    }
+
+    private class BrightnessAdjustmentTask extends Thread {
+        private final int startY;
+        private final int endY;
+        private final int value;
+
+        public BrightnessAdjustmentTask(int startY, int endY, int value) {
+            this.startY = startY;
+            this.endY = endY;
+            this.value = value;
+        }
+
+        @Override
+        public void run() {
+            for (int y = startY; y < endY; y++) {
+                for (int x = 0; x < image.getWidth(); x++) {
+                    int rgb = image.getRGB(x, y);
+                    int alpha = (rgb >> 24) & 0xFF;
+                    int red = (rgb >> 16) & 0xFF;
+                    int green = (rgb >> 8) & 0xFF;
+                    int blue = rgb & 0xFF;
+
+                    // Zmiana jasności dla każdego kanału koloru
+                    red = clamp(red + value);
+                    green = clamp(green + value);
+                    blue = clamp(blue + value);
+
+                    int newRGB = (alpha << 24) | (red << 16) | (green << 8) | blue;
+                    image.setRGB(x, y, newRGB);
+                }
+            }
+        }
+    }
+
+    // Metoda do zwiększenia jasności obrazu o podaną stałą z wykorzystaniem wielu wątków
+    public void adjustBrightnessParallel(int value, int numThreads) {
+        if (image == null) {
+            System.out.println("Brak wczytanego obrazu.");
+            return;
+        }
+
+        Thread[] threads = new Thread[numThreads];
+        int heightPerThread = image.getHeight() / numThreads;
+
+        for (int i = 0; i < numThreads; i++) {
+                 int threadIndex = i;
+            int startY = threadIndex * heightPerThread;
+            int endY = (threadIndex == numThreads - 1) ? image.getHeight() : (threadIndex + 1) * heightPerThread;
+            threads[i] = new BrightnessAdjustmentTask(startY,endY,value);
+            threads[i].start();
+        }
+
+        // Czekanie na zakończenie wszystkich wątków
+        for (Thread thread : threads) {
+            try {
+                thread.join();
+            } catch (InterruptedException e) {
+                System.out.println("Wątek został przerwany: " + e.getMessage());
+            }
+        }
+    }
+
+    public void adjustBrightnessPoolThread(int value /*, int numThreads*/) {
+        if (image == null) {
+            System.out.println("Brak wczytanego obrazu.");
+            return;
+        }
+        int numThreads = image.getHeight();
+        ExecutorService executor = Executors.newFixedThreadPool(numThreads);
+
+        // Dzielenie obrazu na części i przetwarzanie ich w osobnych wątkach
+        int heightPerThread = 1;
+        for (int i = 0; i < numThreads-1; i++) {
+            int startY = i;
+            int endY = i + 1;
+            Runnable task = new BrightnessAdjustmentTask(startY, endY, value);
+            executor.execute(task);
+        }
+
+        executor.shutdown();
+        try {
+            executor.awaitTermination(Long.MAX_VALUE, TimeUnit.NANOSECONDS);
+        } catch (InterruptedException e) {
+            System.out.println("Wątek został przerwany: " + e.getMessage());
+        }
+    }
+
+    // Metoda do obliczenia histogramu wybranego kanału obrazu
+    public int[] calculateChannelHistogram(int channel) {
+        //(0 dla czerwonego, 1 dla zielonego, 2 dla niebieskiego)
+        if (image == null) {
+            System.out.println("Brak wczytanego obrazu.");
+            return null;
+        }
+
+        int[] histogram = new int[256];
+        int numThreads = Runtime.getRuntime().availableProcessors();
+        ExecutorService executor = Executors.newFixedThreadPool(numThreads);
+
+        // Dzielenie obrazu na części i przetwarzanie ich w osobnych wątkach
+        int heightPerThread = image.getHeight() / numThreads;
+        for (int i = 0; i < numThreads; i++) {
+            int startY = i * heightPerThread;
+            int endY = (i == numThreads - 1) ? image.getHeight() : (i + 1) * heightPerThread;
+            Runnable task = new HistogramCalculationTask(channel, startY, endY, histogram);
+            executor.execute(task);
+        }
+
+        executor.shutdown();
+        try {
+            executor.awaitTermination(Long.MAX_VALUE, TimeUnit.NANOSECONDS);
+        } catch (InterruptedException e) {
+            System.out.println("Wątek został przerwany: " + e.getMessage());
+        }
+
+        return histogram;
+    }
+
+    // Klasa wewnętrzna reprezentująca zadanie obliczania histogramu dla wybranego kanału w jednym wątku
+    private class HistogramCalculationTask implements Runnable {
+        private final int channel;
+        private final int startY;
+        private final int endY;
+        private final int[] histogram;
+
+        public HistogramCalculationTask(int channel, int startY, int endY, int[] histogram) {
+            this.channel = channel;
+            this.startY = startY;
+            this.endY = endY;
+            this.histogram = histogram;
+        }
+
+        @Override
+        public void run() {
+            for (int y = startY; y < endY; y++) {
+                for (int x = 0; x < image.getWidth(); x++) {
+                    int rgb = image.getRGB(x, y);
+                    int color = (rgb >> (channel * 8)) & 0xFF; // Wybór kanału koloru
+                    synchronized (histogram) {
+                        histogram[color]++;
+                    }
+                }
+            }
+        }
+    }
+
+    // Metoda do generowania obrazu przedstawiającego wykres histogramu
+    public void generateHistogramImage(int[] histogram, String outputPath) {
+        if (histogram == null || histogram.length != 256) {
+            System.out.println("Niepoprawny histogram.");
+            return;
+        }
+
+        int width = 256; // Szerokość obrazu
+        int height = 200; // Wysokość obrazu
+        BufferedImage histogramImage = new BufferedImage(width, height, BufferedImage.TYPE_INT_RGB);
+        Graphics graphics = histogramImage.getGraphics();
+
+        // Wypełnienie tła na biało
+        graphics.setColor(Color.WHITE);
+        graphics.fillRect(0, 0, width, height);
+
+        // Znalezienie maksymalnej wartości w histogramie
+        int maxCount = 0;
+        for (int count : histogram) {
+            maxCount = Math.max(maxCount, count);
+        }
+
+        // Rysowanie słupków na podstawie histogramu
+        graphics.setColor(Color.BLACK);
+        for (int i = 0; i < histogram.length; i++) {
+            int barHeight = (int) ((double) histogram[i] / maxCount * (height - 20)); // Wysokość słupka
+            int x = i;
+            int y = height - 10 - barHeight; // Górna krawędź słupka
+            graphics.drawLine(x, height - 10, x, y); // Linia pionowa
+        }
+
+        // Zapisanie obrazu histogramu do pliku
+        try {
+            File outputFile = new File(outputPath);
+            ImageIO.write(histogramImage, "png", outputFile);
+            System.out.println("Obraz histogramu został wygenerowany i zapisany pomyślnie.");
+        } catch (Exception e) {
+            System.out.println("Wystąpił błąd podczas zapisywania obrazu histogramu: " + e.getMessage());
+        }
+    }
+
+
+    //Zad 3 z wykorzystaniem Runnable
+
+    private class BrightnessAdjustmentTaskRunnable implements Runnable {
+        private final int startY;
+        private final int endY;
+        private final int value;
+
+        public BrightnessAdjustmentTaskRunnable(int startY, int endY, int value) {
+            this.startY = startY;
+            this.endY = endY;
+            this.value = value;
+        }
+
+        @Override
+        public void run() {
+            for (int y = startY; y < endY; y++) {
+                for (int x = 0; x < image.getWidth(); x++) {
+                    int rgb = image.getRGB(x, y);
+                    int alpha = (rgb >> 24) & 0xFF;
+                    int red = (rgb >> 16) & 0xFF;
+                    int green = (rgb >> 8) & 0xFF;
+                    int blue = rgb & 0xFF;
+
+                    // Zmiana jasności dla każdego kanału koloru
+                    red = clamp(red + value);
+                    green = clamp(green + value);
+                    blue = clamp(blue + value);
+
+                    int newRGB = (alpha << 24) | (red << 16) | (green << 8) | blue;
+                    image.setRGB(x, y, newRGB);
+                }
+            }
+        }
+    }
+
+    public void adjustBrightnessParallelRunnable(int value, int numThreads) {
+        if (image == null) {
+            System.out.println("Brak wczytanego obrazu.");
+            return;
+        }
+
+        Thread[] threads = new Thread[numThreads];
+        int heightPerThread = image.getHeight() / numThreads;
+
+        for (int i = 0; i < numThreads; i++) {
+            int threadIndex = i;
+            int startY = threadIndex * heightPerThread;
+            int endY = (threadIndex == numThreads - 1) ? image.getHeight() : (threadIndex + 1) * heightPerThread;
+
+            threads[i] = new Thread(new BrightnessAdjustmentTaskRunnable(startY, endY, value));
+
+            //   bez definiowania prywatnej klasy wątku
+//          threads[i] = new Thread(() -> {
+//                for (int y = startY; y < endY; y++) {
+//                    for (int x = 0; x < image.getWidth(); x++) {
+//                        int rgb = image.getRGB(x, y);
+//                        int alpha = (rgb >> 24) & 0xFF;
+//                        int red = (rgb >> 16) & 0xFF;
+//                        int green = (rgb >> 8) & 0xFF;
+//                        int blue = rgb & 0xFF;
+//
+//                        // Zmiana jasności dla każdego kanału koloru
+//                        red = clamp(red + value);
+//                        green = clamp(green + value);
+//                        blue = clamp(blue + value);
+//
+//                        int newRGB = (alpha << 24) | (red << 16) | (green << 8) | blue;
+//                        image.setRGB(x, y, newRGB);
+//                    }
+//            }});
+
+            threads[i].start();
+        }
+
+        // Czekanie na zakończenie wszystkich wątków
+        for (Thread thread : threads) {
+            try {
+                thread.join();
+            } catch (InterruptedException e) {
+                System.out.println("Wątek został przerwany: " + e.getMessage());
+            }
+        }
+    }
+
+
+}
+
+
+
+
+------------------------------------------Chat client------------------------------
+
+
+
+public class ClientThread extends Thread {
+    private Socket socket;
+    private PrintWriter writer;
+
+
+    public ClientThread(String address, int port) {
+        try {
+            socket = new Socket(address, port);
+        } catch (IOException e) {
+            e.printStackTrace();
+        }
+    }
+
+    public void run(){
+        try {
+            InputStream input = socket.getInputStream();
+            OutputStream output = socket.getOutputStream();
+            BufferedReader reader = new BufferedReader(new InputStreamReader(input));
+            writer = new PrintWriter(output, true);
+            String message;
+            while ((message = reader.readLine()) != null){
+//                if(message.startsWith("FI"))
+//                    receiveFile(message.substring(2));
+//                else
+                    System.out.println(message);
+                //runCommand(message);
+            }
+        } catch (IOException e) {
+            e.printStackTrace();
+        }
+    }
+
+    private void send(String message){
+        writer.println(message);
+    }
+
+    public void login(String name) {
+        writer.println("LO "+name);
+    }
+
+    public void broadcast(String message) {
+        writer.println("BR "+message);
+    }
+
+    public void whisper(String message) {
+        writer.println("WH "+message);
+    }
+
+    public void online() {
+        writer.println("ON ");
+    }
+
+
+
+
+
+
+    public static void main(String[] args) {
+        ClientThread serverThread = new ClientThread("localhost", 5000);
+        serverThread.start();
+        BufferedReader reader = new BufferedReader(new InputStreamReader(System.in));
+
+        System.out.println("Login: ");
+        try {
+            String line = reader.readLine();
+            serverThread.login(line);
+
+            while(true) {
+                String command = reader.readLine();
+                if(command.startsWith("/")) {
+                    String data[] = command.substring(1).split(" ", 2);
+                    switch(data[0]) {
+                        case "online" -> serverThread.online();
+                        case "w" -> serverThread.whisper(data[1]);
+                        //case "file" -> serverThread.sendFile(data[1]);
+                        default -> System.out.println("Unknown command");
+                    }
+                }
+                else serverThread.broadcast(command);
+            }
+        } catch (IOException e) {
+            e.printStackTrace();
+        }
+
+
+------------------------------------------Chat server ----------------------------
+
+Klasa Server
+
+
+
+import java.io.DataInputStream;
+import java.io.DataOutputStream;
+import java.io.IOException;
+import java.net.ServerSocket;
+import java.net.Socket;
+import java.sql.SQLOutput;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.Optional;
+import java.util.stream.Collectors;
+
+public class Server {
+    private ServerSocket serverSocket;
+    private List<ClientThread> clients = new ArrayList<>();
+
+    public Server(int port) {
+        try {
+            this.serverSocket = new ServerSocket(port);
+        } catch (IOException e) {
+            e.printStackTrace();
+        }
+    }
+
+    public void listen(){
+        System.out.println("Oczekiwanie...");
+        while(true){
+            Socket clientSocket;
+            try {
+                clientSocket = serverSocket.accept();
+                System.out.println("Nowy klient dołączył!");
+                ClientThread thread = new ClientThread(clientSocket, this);
+                clients.add(thread);
+                thread.start();
+            } catch (IOException e) {
+                e.printStackTrace();
+            }
+
+        }
+    }
+
+    public void removeClient(ClientThread client) {
+        clients.remove(client);
+        broadcastLogout(client);
+    }
+
+    public void broadcast(ClientThread sender, String message){
+        for(var currentClient : clients)
+            currentClient.send("BR "+sender.getClientName()+": "+message);
+
+    }
+
+    public void broadcastLogin(ClientThread client) {
+        for(var currentClient : clients)
+            if(currentClient != client)
+                currentClient.send("LN "+client.getClientName());
+
+    }
+
+    public void broadcastLogout(ClientThread client) {
+        for(var currentClient : clients)
+            if(currentClient != client) {
+                currentClient.send("LT " + client.getClientName());
+                clients.remove(client);
+            }
+    }
+
+    private Optional<ClientThread> getClient(String clientName) {
+        return clients.stream()
+                .filter(client -> clientName.equals(client.getClientName()))
+                .findFirst();
+    }
+
+    public void whisper(ClientThread sender, String message) {
+        String[] messageArr = message.split(" ");
+        String recipientName = messageArr[0];
+
+        Optional<ClientThread> recipient = getClient(recipientName);
+        if(recipient.isPresent()) {
+            recipient.get().send("WH "+sender.getClientName()+" "+messageArr[1]);
+        }
+        else sender.send("NU "+recipientName);
+    }
+
+    public void online(ClientThread sender) {
+        String listString = clients.stream()
+                .map(ClientThread::getClientName)
+                .collect(Collectors.joining(" "));
+        sender.send("ON "+listString);
+    }
+
+    public void sendFile(ClientThread sender, String message) throws IOException {
+        String[] messageArr = message.split(" ");
+        String recipientName = messageArr[0];
+        long fileSize = Long.parseLong(messageArr[1]);
+        String fileName = messageArr[2];
+
+        Optional<ClientThread> recipient = getClient(recipientName);
+
+        if(recipient.isPresent()) {
+            DataInputStream fileIn = new DataInputStream(sender.getSocket().getInputStream());
+            DataOutputStream fileOut = new DataOutputStream(recipient.get().getSocket().getOutputStream());
+
+            byte[] buffer = new byte[64];
+            long receivedSize = 0;
+            int count;
+
+            recipient.get().send("FI: "+sender.getClientName()+" "+fileSize+" "+fileName);
+            while (receivedSize < fileSize) {
+                count = fileIn.read(buffer);
+                receivedSize += count;
+                System.out.println(receivedSize+" "+(fileSize-receivedSize));
+                fileOut.write(buffer, 0, count);
+            }
+        }
+
+        else sender.send("NU: "+recipientName);
+
+    }
+}
+
+
+
+
+-------------------------Klasa ClientThread----------------
+
+
+
+public class ClientThread extends Thread {
+   public Socket getSocket() {
+      return socket;
+   }
+
+   private Socket socket;
+   private PrintWriter writer;
+   private Server server;
+   private String clientName = null;
+
+   public ClientThread(Socket socket, Server server) {
+      this.socket = socket;
+      this.server = server;
+   }
+
+   public void run(){
+      try {
+         InputStream input = socket.getInputStream();
+         OutputStream output = socket.getOutputStream();
+         BufferedReader reader = new BufferedReader(new InputStreamReader(input));
+         writer = new PrintWriter(output, true);
+         String message;
+         while ((message = reader.readLine()) != null){
+            String prefix = message.substring(0,2);
+            String postfix = message.substring(2);
+            switch(prefix) {
+               case "LO" -> login(postfix);
+               case "BR" -> server.broadcast(this,postfix);
+               case "WH" -> server.whisper(this,postfix);
+               case "ON" -> server.online(this);
+               case "FI" -> server.sendFile(this,postfix);
+            }
+
+            System.out.println(message);
+         }
+         System.out.println("closed");
+         server.removeClient(this);
+      }
+      catch(SocketException e){
+         server.broadcastLogout(this);
+      }
+      catch (IOException e) {
+         e.printStackTrace();
+      }
+   }
+
+   public void send(String message){
+      writer.println(message);
+   }
+
+   public String getClientName() {
+      return clientName;
+   }
+
+   public void login(String name) {
+      clientName = name;
+      server.online(this);
+      server.broadcastLogin(this);
+   }
+
+
+}
+
